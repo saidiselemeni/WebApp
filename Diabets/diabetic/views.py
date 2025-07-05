@@ -1,42 +1,28 @@
-# from django.shortcuts import render
-
-# Create your views here.
-from django.shortcuts import render
-from .models import User, Patient, Doctor, SugarTest, Comment
-from .serializers import UserSerializer, PatientSerializer, DoctorSerializer, SugarTestSerializer, CommentSerializer
-from django.http import JsonResponse
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import viewsets
-import json
-from rest_framework import status
-from rest_framework_simplejwt.tokens import RefreshToken
-from .models import Doctor
-from django.conf import settings
-import jwt
-import datetime
-from rest_framework import generics
-from .models import EducationalContent
-from .serializers import EducationalContentSerializer
-
-
-# Generic API Function
-
-from rest_framework.decorators import api_view
-from rest_framework.response import Response
-from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.decorators import api_view, permission_classes
+# from rest_framework.permissions import IsAuthenticated, IsAdminUser, BasePermission
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.response import Response
 from rest_framework import status
+from .serializers import (
+    UserSerializer,
+    PatientSerializer,
+    DoctorSerializer,
+    SugarTestSerializer,
+    CommentSerializer,
+    EducationalContentSerializer,
+)
+from .models import User, Patient, Doctor, SugarTest, Comment, EducationalContent
 
-class EducationalContentUploadView(generics.ListCreateAPIView):
-    queryset = EducationalContent.objects.all()
-    serializer_class = EducationalContentSerializer
+# Generic API Function with superuser permission
+# from rest_framework.decorators import api_view, permission_classes
 
 def gain_api(model_class, serializer_class):
     @api_view(['GET', 'POST', 'PUT', 'DELETE'])
-    
+    # @permission_classes([IsAuthenticated])  # Only authentication required, not superuser
     def api(request, id=None):
-        # For GET
+   
         if request.method == 'GET':
             if id:
                 try:
@@ -49,8 +35,7 @@ def gain_api(model_class, serializer_class):
                 instances = model_class.objects.all()
                 serializer = serializer_class(instances, many=True)
                 return Response(serializer.data)
-        
-        # For Insert
+
         elif request.method == 'POST':
             serializer = serializer_class(data=request.data)
             if serializer.is_valid():
@@ -58,7 +43,6 @@ def gain_api(model_class, serializer_class):
                 return Response(serializer.data, status=201)
             return Response(serializer.errors, status=400)
 
-        # For Update
         elif request.method == 'PUT':
             if id:
                 try:
@@ -69,55 +53,91 @@ def gain_api(model_class, serializer_class):
                         return Response(serializer.data)
                     return Response(serializer.errors, status=400)
                 except model_class.DoesNotExist:
-                    return JsonResponse({'message': 'Object not found'}, status=404)
+                    return Response({'message': 'Object not found'}, status=404)
             return Response({'message': 'ID is required for update'}, status=400)
 
-        # For Delete
         elif request.method == 'DELETE':
             if id:
                 try:
                     instance = model_class.objects.get(id=id)
                     instance.delete()
-                    return Response({'message': 'Deleted successfully'}, status=204)
+                    return Response({'message': 'Deleted successfully'}, status=200)
                 except model_class.DoesNotExist:
-                    return JsonResponse({'message': 'Object not found'}, status=404)
+                    return Response({'message': 'Object not found'}, status=404)
             return Response({'message': 'ID is required for deletion'}, status=400)
 
-        return JsonResponse({'message': 'Invalid method'}, status=405)
+        return Response({'message': 'Invalid method'}, status=405)
 
     return api
 
 
+@api_view(['POST'])
+def login_view(request):
+    email = request.data.get('email')
+    password = request.data.get('password')
 
-def generate_token_for_doctor(doctor):
-    payload = {
-        'doctor_id': doctor.id,
-        'email': doctor.email,
-        'exp': datetime.datetime.utcnow() + datetime.timedelta(hours=24),
-        'iat': datetime.datetime.utcnow(),
-    }
-    token = jwt.encode(payload, settings.SECRET_KEY, algorithm='HS256')
-    return token
+    if not email or not password:
+        return Response({'detail': 'Email and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.response import Response
-from rest_framework.decorators import api_view, permission_classes
-from .models import SugarTest
-from .serializers import SugarTestSerializer
+    user = authenticate(request, username=email, password=password)  # username=email here
 
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_my_tests(request):
-    user = request.user
-    if hasattr(user, 'patient'):
-        patient = user.patient
-        tests = SugarTest.objects.filter(patient=patient).order_by('-test_date')
-        serializer = SugarTestSerializer(tests, many=True)
-        return Response(serializer.data)
-    return Response({"detail": "Not a patient user."}, status=400)
+    if user is None:
+        return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
+
+    refresh = RefreshToken.for_user(user)
+    return Response({
+        'refresh': str(refresh),
+        'access': str(refresh.access_token),
+        'user': {
+            'id': user.id,
+            'email': user.email,
+            'role': user.role,
+            # add other fields you want to expose
+        },
+    })
+
 
 @api_view(['POST'])
-def custom_login_view(request):
+def admin_login_view(request):
+    return Response({"message": "Admin login endpoint"})
+
+
+
+
+# API endpoints with superuser restriction
+manage_user = gain_api(User, UserSerializer)
+manage_patient = gain_api(Patient, PatientSerializer)
+manage_doctor = gain_api(Doctor, DoctorSerializer)
+manage_sugar = gain_api(SugarTest, SugarTestSerializer)
+manage_comment = gain_api(Comment, CommentSerializer)
+manage_educational = gain_api(EducationalContent, EducationalContentSerializer)
+
+
+
+# views.py
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+from .serializers import DoctorLoginSerializer
+
+@api_view(['POST'])
+def doctor_login_view(request):
+    serializer = DoctorLoginSerializer(data=request.data)
+    if serializer.is_valid():
+        doctor = serializer.validated_data['doctor']
+        return Response({
+            "doctor": {
+            "id": 1,
+            "email": "bitam11-006@suza.ac.tz",
+            "role": "Patient"
+        }
+
+        })
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['POST'])
+def patient_login_view(request):
     email = request.data.get('email')
     password = request.data.get('password')
 
@@ -125,39 +145,15 @@ def custom_login_view(request):
         return Response({'detail': 'Email and password are required.'}, status=status.HTTP_400_BAD_REQUEST)
 
     try:
-        doctor = Doctor.objects.get(email=email)
+        patient = Patient.objects.get(email=email, password=password)
+    except Patient.DoesNotExist:
+        return Response({'detail': 'Invalid credentials.'}, status=status.HTTP_401_UNAUTHORIZED)
 
-        # NOTE: Using plain password comparison — not secure for production!
-        if doctor.password != password:
-            return Response({'detail': 'Invalid password.'}, status=status.HTTP_401_UNAUTHORIZED)
-
-        token = generate_token_for_doctor(doctor)
-
-        return Response({
-            'access': token,
-            'doctor_id': doctor.id,
-            'doctor_name': doctor.doctor_name,
-            'email': doctor.email,
-        })
-
-    except Doctor.DoesNotExist:
-        return Response({'detail': 'Doctor not found.'}, status=status.HTTP_404_NOT_FOUND)
-
-@api_view(['POST'])
-def doctor_login(request):
-    email = request.data.get('email')
-    password = request.data.get('password')
-    try:
-        doctor = Doctor.objects.get(email=email, password=password)
-        serializer = DoctorSerializer(doctor)
-        return Response(serializer.data)
-    except Doctor.DoesNotExist:
-        return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
-
-# API Endpoints
-manage_user = gain_api(User, UserSerializer)
-manage_patient = gain_api(Patient, PatientSerializer)
-manage_doctor = gain_api(Doctor, DoctorSerializer)
-manage_sugar = gain_api(SugarTest, SugarTestSerializer)
-manage_comment = gain_api(Comment, CommentSerializer)
-manage_Educational = gain_api(EducationalContent, EducationalContentSerializer)
+    return Response({
+        'patient': {
+                'id': patient.id,
+                'email': patient.email,
+                'role': 'Patient',  # or patient.role if exists
+                # add other fields as needed, e.g. patient_name
+            }
+    })

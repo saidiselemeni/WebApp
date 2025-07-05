@@ -1,4 +1,5 @@
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 from django.contrib.auth.models import AbstractUser
 
 
@@ -8,9 +9,12 @@ class User(AbstractUser):
         ('Doctor', 'Doctor'),
         ('Admin', 'Admin'),
     ]
-    username = models.CharField(max_length=20, unique=True)
+    username = models.CharField(max_length=20, unique=True, blank=True, null=True)
     password = models.CharField(max_length=200)
+    email = models.EmailField(_('email address'), unique=True) 
     role = models.CharField(max_length=10, choices=ROLE_CHOICES)
+    USERNAME_FIELD = 'email'  # use email to login
+    REQUIRED_FIELDS = ['username']
 
     def __str__(self):
         return self.username
@@ -21,7 +25,7 @@ class Doctor(models.Model):
     address = models.CharField(max_length=30)
     phone_no = models.CharField(max_length=15, unique=True)
     email = models.EmailField(unique=True)
-    password = models.CharField(default='1234')
+    password = models.CharField()
 
     def __str__(self):
         return f"{self.doctor_name}"
@@ -39,7 +43,7 @@ class Patient(models.Model):
     phone_no = models.CharField(max_length=15, unique=True)
     email = models.EmailField(unique=True)
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES)
-    password = models.CharField(default='1234')
+    password = models.CharField()
     doctor = models.ForeignKey(Doctor, on_delete=models.SET_NULL, null=True, blank=True)
 
     def __str__(self):

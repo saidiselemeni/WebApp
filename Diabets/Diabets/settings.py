@@ -40,8 +40,18 @@ INSTALLED_APPS = [
     'diabetic',
     'corsheaders',
 ]
+AUTHENTICATION_BACKENDS = [
+    'diabetic.backends.EmailBackend',
+    'django.contrib.auth.backends.ModelBackend',  # fallback
+]
 
 AUTH_USER_MODEL = 'diabetic.User'
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+),
+}
+
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
